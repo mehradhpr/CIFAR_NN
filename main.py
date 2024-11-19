@@ -6,21 +6,24 @@ from torchvision import transforms
 # load CIFAR-10 dataset with pytorch
 # convert to tensor, normalize and flatten
 transform = transforms.Compose([
+
+    # Convert from PIL format to Tensor
+    # Scales pixel values from the range [0, 255] to [0.0, 1.0]
     transforms.ToTensor(),
+
+    # Means and Standard Deviations for the three channels
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
+
+    # Flattens a 3D image tenser (Color x Height x Width) into a 1D vector
     transforms.Lambda(lambda x: torch.flatten(x)),
 ])
 
-# load CIFAR-10 dataset with pytorch
-# convert to tensor, normalize and flatten
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-    transforms.Lambda(lambda x: torch.flatten(x)),
-])
-
+# Download CIFAR Training set
 trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+
+# Download CIFAR Testing set
 testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+
 
 train_id = list(range(4000))
 val_id = list(range(4000, 5000))
@@ -40,7 +43,7 @@ image_size = trainset[0][0].size(0)
 class_map = {0: 'plane', 1: 'car', 2: 'bird', 3: 'cat', 4: 'deer', 5: 'dog', 6: 'frog', 7: 'horse', 8: 'ship',
              9: 'truck'}
 
-# implement operations for our model
+# Model Operations -------------------
 
 def activation(x):
     """
@@ -56,7 +59,6 @@ def activation(x):
 def activation_grad(x):
     """
     Calculate the gradient of activation() respect to input x
-    You need to find the maths representation of the derivative first
     :param x: input tensor
     :return: element-wise gradient of activation()
     """

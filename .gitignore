@@ -26,3 +26,4 @@ ENV/
 env/
 .venv/
 .python-version
+data/
