@@ -1,7 +1,8 @@
 import torch
-from torch import nn
+from torch import nn # nn.functional is used
 import torchvision
 from torchvision import transforms
+import matplotlib.pyplot as plt # Added for plotting
 
 # load CIFAR-10 dataset with pytorch
 # convert to tensor, normalize and flatten
@@ -149,21 +150,21 @@ def backward(w1, b1, w2, b2, t_one_hot, x0, s1, x1, s2,
 
 # training loop
 nb_classes = 10
-nb_train_samples = len(train_loader)
+nb_train_samples_loader = len(train_loader) # Renamed to avoid conflict if nb_train_samples means something else
 
 # Model hyperparameters
-nb_hidden = 128  # Increased number of hidden neurons
-lr = 0.01      # Adjusted learning rate
-epochs = 100 # Reduced for quicker testing, you might need 1000 or more
+nb_hidden = 128
+lr = 0.01
+epochs = 100
 
 # He initialization for weights (good for ReLU)
 std_w1 = torch.sqrt(torch.tensor(2.0 / image_size))
 std_w2 = torch.sqrt(torch.tensor(2.0 / nb_hidden))
 
 w1 = torch.empty(nb_hidden, image_size).normal_(0, std_w1)
-b1 = torch.zeros(nb_hidden) # Initialize biases to zero
+b1 = torch.zeros(nb_hidden)
 w2 = torch.empty(nb_classes, nb_hidden).normal_(0, std_w2)
-b2 = torch.zeros(nb_classes) # Initialize biases to zero
+b2 = torch.zeros(nb_classes)
 
 # Tensors for gradients
 grad_dw1 = torch.zeros_like(w1)
@@ -171,11 +172,19 @@ grad_db1 = torch.zeros_like(b1)
 grad_dw2 = torch.zeros_like(w2)
 grad_db2 = torch.zeros_like(b2)
 
-print(f"Training with {nb_hidden} hidden neurons, lr={lr}, on {len(train_sub_set)} training samples.")
+print(f"Training with {nb_hidden} hidden neurons, lr={lr}, on {len(train_sub_set)} training samples for {epochs} epochs.")
 
-for k in range(epochs):
-    acc_loss = 0
-    nb_train_errors = 0
+# <<<< ADDED: Initialize history storage >>>>
+history = {
+    "train_loss": [],
+    "train_acc": [],
+    "val_loss": [],
+    "val_acc": []
+}
+
+for k in range(epochs): # k will go from 0 to epochs-1
+    acc_loss_train_epoch = 0 # Use a more descriptive name for epoch sum
+    nb_train_errors_epoch = 0 # Use a more descriptive name for epoch sum
 
     grad_dw1.zero_()
     grad_db1.zero_()
@@ -184,41 +193,33 @@ for k in range(epochs):
 
     # Training phase
     for x_batch, y_batch in train_loader: # batch_size is 1
-        # Squeeze batch dimension as we process one image at a time
         x_sample = x_batch.squeeze(dim=0)
         y_sample = y_batch.squeeze(dim=0)
 
         train_target_one_hot = nn.functional.one_hot(y_sample, num_classes=nb_classes).float()
-
-        # Forward propagation
         x0, s1, x1, s2_logits = forward(w1, b1, w2, b2, x_sample)
-
-        # Prediction
         pred = torch.argmax(s2_logits)
 
         if pred != y_sample:
-            nb_train_errors += 1
+            nb_train_errors_epoch += 1
 
         loss = cross_entropy(s2_logits, train_target_one_hot)
-        acc_loss += loss.item()
+        acc_loss_train_epoch += loss.item()
 
-        # Backward propagation (gradients are accumulated)
         backward(w1, b1, w2, b2, train_target_one_hot, x0, s1, x1, s2_logits,
                  grad_dw1, grad_db1, grad_dw2, grad_db2)
 
     # Update weights after processing all samples in the epoch
-    
-    # Averaging gradients over the number of training samples for the epoch update
-    w1 -= lr * (grad_dw1 / nb_train_samples)
-    b1 -= lr * (grad_db1 / nb_train_samples)
-    w2 -= lr * (grad_dw2 / nb_train_samples)
-    b2 -= lr * (grad_db2 / nb_train_samples)
-
+    # nb_train_samples_loader is len(train_loader), which is the number of samples since batch_size=1
+    w1 -= lr * (grad_dw1 / nb_train_samples_loader)
+    b1 -= lr * (grad_db1 / nb_train_samples_loader)
+    w2 -= lr * (grad_dw2 / nb_train_samples_loader)
+    b2 -= lr * (grad_db2 / nb_train_samples_loader)
 
     # Validation phase
-    nb_val_errors = 0
-    val_loss = 0
-    with torch.no_grad(): # Disable gradient calculations for validation
+    nb_val_errors_epoch = 0 # Use a more descriptive name for epoch sum
+    acc_loss_val_epoch = 0 # Use a more descriptive name for epoch sum
+    with torch.no_grad():
         for x_val_batch, y_val_batch in val_loader:
             x_val_sample = x_val_batch.squeeze(dim=0)
             y_val_sample = y_val_batch.squeeze(dim=0)
@@ -227,31 +228,70 @@ for k in range(epochs):
             pred_val = torch.argmax(s2_logits_val)
 
             if pred_val != y_val_sample:
-                nb_val_errors += 1
+                nb_val_errors_epoch += 1
             
             val_target_one_hot = nn.functional.one_hot(y_val_sample, num_classes=nb_classes).float()
-            val_loss += cross_entropy(s2_logits_val, val_target_one_hot).item()
+            acc_loss_val_epoch += cross_entropy(s2_logits_val, val_target_one_hot).item()
 
+    # len(train_loader) is the number of training samples (since batch_size=1)
+    # len(val_loader) is the number of validation samples (since batch_size=1)
+    current_train_accuracy = 100.0 - (100.0 * nb_train_errors_epoch / len(train_loader))
+    current_val_accuracy = 100.0 - (100.0 * nb_val_errors_epoch / len(val_loader))
+    current_avg_train_loss = acc_loss_train_epoch / len(train_loader)
+    current_avg_val_loss = acc_loss_val_epoch / len(val_loader)
 
-    train_accuracy = 100.0 - (100.0 * nb_train_errors / len(train_loader))
-    val_accuracy = 100.0 - (100.0 * nb_val_errors / len(val_loader))
-    avg_train_loss = acc_loss / len(train_loader)
-    avg_val_loss = val_loss / len(val_loader)
+    # <<<< ADDED: Store metrics in history >>>>
+    history["train_loss"].append(current_avg_train_loss)
+    history["train_acc"].append(current_train_accuracy) # Storing as percentage
+    history["val_loss"].append(current_avg_val_loss)
+    history["val_acc"].append(current_val_accuracy)   # Storing as percentage
 
-    print(f'Epoch {k}: Train Loss: {avg_train_loss:.4f}, Train Acc: {train_accuracy:.2f}%, '
-          f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_accuracy:.2f}%')
+    # Original print statement used k, which is 0-indexed. k+1 for 1-indexed epoch display.
+    print(f'Epoch {k+1}/{epochs}: Train Loss: {current_avg_train_loss:.4f}, Train Acc: {current_train_accuracy:.2f}%, '
+          f'Val Loss: {current_avg_val_loss:.4f}, Val Acc: {current_val_accuracy:.2f}%')
 
 print("Training finished.")
 
 # Testing phase (optional, similar to validation)
-# nb_test_errors = 0
-# with torch.no_grad():
-#     for x_test_batch, y_test_batch in test_loader:
-#         x_test_sample = x_test_batch.squeeze(dim=0)
-#         y_test_sample = y_test_batch.squeeze(dim=0)
-#         _, _, _, s2_logits_test = forward(w1, b1, w2, b2, x_test_sample)
-#         pred_test = torch.argmax(s2_logits_test)
-#         if pred_test != y_test_sample:
-#             nb_test_errors += 1
-# test_accuracy = 100.0 - (100.0 * nb_test_errors / len(test_loader))
-# print(f'Test Accuracy: {test_accuracy:.2f}%')
+nb_test_errors = 0
+with torch.no_grad():
+    for x_test_batch, y_test_batch in test_loader:
+        x_test_sample = x_test_batch.squeeze(dim=0)
+        y_test_sample = y_test_batch.squeeze(dim=0)
+        _, _, _, s2_logits_test = forward(w1, b1, w2, b2, x_test_sample)
+        pred_test = torch.argmax(s2_logits_test)
+        if pred_test != y_test_sample:
+            nb_test_errors += 1
+# len(test_loader) is the number of test samples since batch_size=1
+final_test_accuracy = 100.0 - (100.0 * nb_test_errors / len(test_loader))
+print(f'Test Accuracy: {final_test_accuracy:.2f}%')
+
+# <<<< ADDED: Plotting Training History >>>>
+if history["train_loss"]: # Check if history was populated (i.e., training ran for at least one epoch)
+    plt.style.use("ggplot")
+    
+    epochs_ran = range(1, len(history["train_loss"]) + 1)
+
+    plt.figure(figsize=(12, 5))
+
+    # Plot Loss
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_ran, history["train_loss"], label="Train Loss")
+    plt.plot(epochs_ran, history["val_loss"], label="Validation Loss")
+    plt.title("Training and Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend(loc="upper right")
+
+    # Plot Accuracy
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_ran, history["train_acc"], label="Train Accuracy")
+    plt.plot(epochs_ran, history["val_acc"], label="Validation Accuracy")
+    plt.title("Training and Validation Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy (%)") # Accuracy is already in percentage
+    plt.legend(loc="lower right")
+
+    plt.suptitle("Training History")
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to make space for suptitle
+    plt.show()
